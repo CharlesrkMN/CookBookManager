@@ -26,9 +26,26 @@ def create_table(conn):
             cover_color TEXT
         );"""
         
+        sql_create_tags_table = """
+        CREATE TABLE IF NOT EXISTS tags_table (
+            tag_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tag TEXT NOT NULL,
+            cookbook_id INTEGER,
+            FOREIGN KEY (cookbook_id) REFERENCES cookbooks(id)
+        );"""
+    
+        
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM cookbooks")
+        cookbooks_notEmpty = cursor.execute('SELECT * FROM cookbooks')
+        tags_notEmpty = cursor.execute('SELECT * FROM tags_table')
+
+        if cookbooks_notEmpty:
+            cursor.execute("DELETE FROM cookbooks")
+        if tags_notEmpty:
+            cursor.execute("DELETE FROM tags_table")
+
         cursor.execute(sql_create_cookbooks_table)
+        cursor.execute(sql_create_tags_table)
         print("Successfully created a database structure")
     except Error as e:
         print(f"Error creating table: {e}")
@@ -86,6 +103,31 @@ def search_by_aesthetic_rating(conn, minimum_rating):
     except Error as e:
         print(f"Error retrieving collection: {e}")
         return []
+    
+def add_recipe_tags(conn, cookbook_id, tags):
+    """Add tags to a cookbook (e.g., 'gluten-free', 'plant-based', 'artisanal')"""
+    # Create a new tags table with many-to-many relationship
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT * FROM cookbooks WHERE id = ?', (cookbook_id,))
+        match = cursor.fetchone()
+        if not match:
+            print(f'There was no cookbook match with id: {cookbook_id}')
+            return
+        
+        cursor.execute("SELECT cookbook_id FROM tags_table WHERE tag = ?", (tags,))
+        exists = cursor.fetchone()
+        if not exists:
+            cursor.execute('INSERT INTO tags_table(tag, cookbook_id) VALUES(?,?)', (tags,cookbook_id))
+            conn.commit()
+            print(f"Successfully added recipe tag with id: {cursor.lastrowid}, description: {tags}, and cookbook id: {cookbook_id}")
+        else:
+            print('That cookbook already has that tag associated with it.')
+
+    except Error as e:
+        print(f"Error adding tag to collection: {e}")
+        return None
 
 def main():
     # Establish connection to our artisanal database
@@ -108,22 +150,40 @@ def main():
             ('The Deconstructed Sandwich: Making Simple Things Complicated', 
              'Juniper Vinegar-Smith', 2023, 5, True, 'Beige')
         ]
-        
+
         print("\nCurating your cookbook collection...")
         for cookbook in cookbooks:
             insert_cookbook(conn, cookbook)
-        
         print("\nYour carefully curated collection:")
         get_all_cookbooks(conn)
 
-        ask = input("\nWould you like to search by aesthetic rating? ")
-        txt = ask.lower()
-        if (txt == 'yes'):
-            rating = input("\nEnter your preferred rating: ")
-            search_by_aesthetic_rating(conn,rating)
-        
-        else:
-            print("\nThanks for browsing!")
+        while True:
+            print('1. Would you like to see all cookbooks?')
+            print('2. Would you like to search cookbooks by aesthetic rating?')
+            print('3. Would you like to add cookbook tags?')
+            print('4. Would you like to see borrowed cookbooks?')
+            print('5. Exit')
+            option = int(input("Enter your choice: "))
+
+            if (option == 1):
+                print("\nYour carefully curated collection:")
+                get_all_cookbooks(conn)
+
+            elif (option == 2):
+                rating = input("\nEnter your preferred rating: ")
+                search_by_aesthetic_rating(conn,rating)
+            
+            elif (option == 3):
+                cookbook_id = int(input('Enter the cookbook id number for the cookbook you would like to add a tag to: '))
+                tags = input('Enter the tag you would like associated with this cookbook: ')
+                add_recipe_tags(conn, cookbook_id, tags)
+            
+            elif (option == 5):
+                print("\nThanks for browsing!")
+                break
+
+            else:
+                print("\nInvalid choice, try again!")
         conn.close()
         print("\nDatabase connection closed")
     else:
